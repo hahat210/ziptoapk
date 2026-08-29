@@ -1,30 +1,5 @@
 #!/usr/bin/env node
 
-/*
- * GitHub Actions ZIP -> APK dönüştürücü
- *
- * Beklenen dosyalar:
- *   - www.zip      zorunlu
- *   - config.json  zorunlu
- *   - icon.png     isteğe bağlı
- *
- * www.zip şu iki yapıyı da destekler:
- *
- * 1) www.zip
- *    ├── index.html
- *    ├── css/
- *    └── js/
- *
- * 2) www.zip
- *    └── www.zip
- *        ├── index.html
- *        ├── css/
- *        └── js/
- *
- * Çıktı:
- *   output/<appName>.apk
- */
-
 const fs = require('fs-extra');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -39,19 +14,8 @@ const ICON_PATH = path.join(ROOT, 'icon.png');
 const BUILD_DIR = path.join(ROOT, 'build_temp');
 const OUTPUT_DIR = path.join(ROOT, 'output');
 
-function log(message) {
-  console.log(`[BUILD] ${message}`);
-}
-
-function fail(message) {
-  console.error('');
-  console.error('========================================');
-  console.error('BUILD HATASI');
-  console.error('========================================');
-  console.error(message);
-  console.error('========================================');
-  console.error('');
-  process.exit(1);
+function log(text) {
+  console.log(`[BUILD] ${text}`);
 }
 
 function run(command, options = {}) {
@@ -63,16 +27,24 @@ function run(command, options = {}) {
       ...options
     });
   } catch (error) {
-    fail(`Komut başarısız oldu:\n${command}`);
+    throw new Error(`Komut başarısız oldu: ${command}`);
   }
 }
 
-/*
- * ZIP'in içinde index.html var mı?
- */
-function zipContainsIndex(zip) {
+function safeFileName(name) {
+  return String(name)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'Uygulamam';
+}
+
+function hasIndexHtml(zip) {
   return zip.getEntries().some(entry => {
-    if (entry.isDirectory) return false;
+    if (entry.isDirectory) {
+      return false;
+    }
 
     const name = entry.entryName
       .replace(/\\/g, '/')
@@ -82,14 +54,11 @@ function zipContainsIndex(zip) {
   });
 }
 
-/*
- * ZIP'in içinde başka bir www.zip bul.
- */
-function findNestedWwwZip(zip) {
-  const entries = zip.getEntries();
-
-  for (const entry of entries) {
-    if (entry.isDirectory) continue;
+function findNestedZip(zip) {
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) {
+      continue;
+    }
 
     const name = entry.entryName
       .replace(/\\/g, '/')
@@ -103,540 +72,490 @@ function findNestedWwwZip(zip) {
   return null;
 }
 
-/*
- * Web ZIP'ini doğru şekilde www klasörüne çıkarır.
- *
- * Öncelik:
- *   1. Dış ZIP'in içinde index.html varsa direkt aç
- *   2. Yoksa içindeki www.zip'i aç
- *   3. İç ZIP'in içinde index.html kontrol et
- */
 function extractWebFiles() {
   const wwwDir = path.join(BUILD_DIR, 'www');
 
   fs.emptyDirSync(wwwDir);
 
-  log('www.zip okunuyor...');
+  log('www.zip açılıyor...');
 
   let outerZip;
 
   try {
     outerZip = new AdmZip(ZIP_PATH);
-    outerZip.getEntries();
   } catch (error) {
-    fail(`www.zip açılamadı: ${error.message}`);
+    throw new Error(
+      `www.zip açılamadı: ${error.message}`
+    );
   }
 
-  const outerEntries = outerZip.getEntries();
-
-  log(`Dış ZIP içerisinde ${outerEntries.length} kayıt bulundu.`);
-
   /*
-   * Önce dış ZIP'in doğrudan web sitesi olup olmadığını kontrol et.
+   * DURUM 1:
+   *
+   * www.zip
+   * ├── index.html
+   * ├── css/
+   * └── js/
    */
-  if (zipContainsIndex(outerZip)) {
-    log('Dış ZIP içerisinde index.html bulundu.');
-    log('Web dosyaları doğrudan çıkarılıyor...');
+  if (hasIndexHtml(outerZip)) {
+    log('index.html dış ZIP içinde bulundu.');
+    log('Dış ZIP doğrudan web sitesi olarak açılıyor.');
 
     outerZip.extractAllTo(wwwDir, true);
   } else {
+
     /*
-     * Dış ZIP'in içinde www.zip ara.
+     * DURUM 2:
+     *
+     * www.zip
+     * └── www.zip
+     *     ├── index.html
+     *     ├── css/
+     *     └── js/
      */
-    const nestedEntry = findNestedWwwZip(outerZip);
+    const nestedEntry = findNestedZip(outerZip);
 
     if (!nestedEntry) {
-      log('Dış ZIP içerisinde index.html bulunamadı.');
-      log('İç www.zip de bulunamadı.');
-
-      const names = outerEntries
-        .slice(0, 30)
-        .map(e => e.entryName)
+      const files = outerZip
+        .getEntries()
+        .slice(0, 50)
+        .map(x => x.entryName)
         .join('\n');
 
-      fail(
-        'Geçerli web içeriği bulunamadı.\n\n' +
-        'ZIP içeriğinin ilk kayıtları:\n' +
-        names
+      throw new Error(
+        'www.zip içinde index.html veya iç www.zip bulunamadı.\n\n' +
+        'ZIP içeriği:\n' +
+        files
       );
     }
 
-    log(`İç ZIP bulundu: ${nestedEntry.entryName}`);
-    log('İç www.zip çıkarılıyor...');
+    log(`İç www.zip bulundu: ${nestedEntry.entryName}`);
 
-    const nestedZipPath = path.join(BUILD_DIR, '__nested_www.zip');
+    const nestedPath =
+      path.join(BUILD_DIR, '__www_inner.zip');
 
     fs.writeFileSync(
-      nestedZipPath,
+      nestedPath,
       nestedEntry.getData()
     );
 
-    let nestedZip;
+    let innerZip;
 
     try {
-      nestedZip = new AdmZip(nestedZipPath);
+      innerZip = new AdmZip(nestedPath);
     } catch (error) {
-      fs.removeSync(nestedZipPath);
-      fail(`İç www.zip açılamadı: ${error.message}`);
-    }
+      fs.removeSync(nestedPath);
 
-    if (!zipContainsIndex(nestedZip)) {
-      fs.removeSync(nestedZipPath);
-
-      const names = nestedZip
-        .getEntries()
-        .slice(0, 30)
-        .map(e => e.entryName)
-        .join('\n');
-
-      fail(
-        'İç www.zip içerisinde index.html bulunamadı.\n\n' +
-        'İç ZIP kayıtları:\n' +
-        names
+      throw new Error(
+        `İç www.zip açılamadı: ${error.message}`
       );
     }
 
-    log('İç www.zip içerisinde index.html bulundu.');
-    log('Web dosyaları çıkarılıyor...');
+    if (!hasIndexHtml(innerZip)) {
+      const files = innerZip
+        .getEntries()
+        .slice(0, 50)
+        .map(x => x.entryName)
+        .join('\n');
 
-    nestedZip.extractAllTo(wwwDir, true);
+      fs.removeSync(nestedPath);
 
-    fs.removeSync(nestedZipPath);
+      throw new Error(
+        'İç www.zip içinde index.html bulunamadı.\n\n' +
+        'İç ZIP içeriği:\n' +
+        files
+      );
+    }
+
+    log('İç www.zip içinde index.html bulundu.');
+    log('İç web sitesi çıkarılıyor...');
+
+    innerZip.extractAllTo(wwwDir, true);
+
+    fs.removeSync(nestedPath);
   }
 
   /*
-   * Çıkarma sonrası index.html gerçekten var mı?
+   * Normal kontrol.
    */
-  const indexPath = path.join(wwwDir, 'index.html');
+  let indexPath = path.join(
+    wwwDir,
+    'index.html'
+  );
 
+  /*
+   * Eğer ZIP:
+   *
+   * www/
+   *   index.html
+   *
+   * şeklindeyse klasörü düzelt.
+   */
   if (!fs.existsSync(indexPath)) {
-    /*
-     * Bazı ZIP'lerde:
-     *
-     * www/
-     *   index.html
-     *
-     * şeklinde ekstra klasör olabilir.
-     *
-     * Onu da otomatik düzelt.
-     */
-    const possibleFolders = fs
-      .readdirSync(wwwDir)
-      .filter(name => {
-        const full = path.join(wwwDir, name);
-        return fs.statSync(full).isDirectory();
-      });
+    const dirs = fs.readdirSync(wwwDir);
 
-    let foundIndex = null;
-
-    for (const folder of possibleFolders) {
-      const candidate = path.join(
+    for (const dir of dirs) {
+      const possible = path.join(
         wwwDir,
-        folder,
+        dir,
         'index.html'
       );
 
-      if (fs.existsSync(candidate)) {
-        foundIndex = candidate;
+      if (fs.existsSync(possible)) {
+        log(`index.html alt klasörde bulundu: ${dir}`);
+        log('Web klasörü düzeltiliyor...');
+
+        const temp = path.join(
+          BUILD_DIR,
+          '__flatten'
+        );
+
+        fs.emptyDirSync(temp);
+
+        fs.copySync(
+          path.join(wwwDir, dir),
+          temp
+        );
+
+        fs.emptyDirSync(wwwDir);
+
+        fs.copySync(
+          temp,
+          wwwDir
+        );
+
+        fs.removeSync(temp);
+
         break;
       }
     }
-
-    if (foundIndex) {
-      log('index.html alt klasörde bulundu.');
-      log('Web klasörü düzleştiriliyor...');
-
-      const tempDir = path.join(BUILD_DIR, '__flatten');
-
-      fs.emptyDirSync(tempDir);
-
-      fs.copySync(
-        path.dirname(foundIndex),
-        tempDir
-      );
-
-      fs.emptyDirSync(wwwDir);
-
-      fs.copySync(
-        tempDir,
-        wwwDir
-      );
-
-      fs.removeSync(tempDir);
-    }
   }
 
+  indexPath = path.join(
+    wwwDir,
+    'index.html'
+  );
+
   if (!fs.existsSync(indexPath)) {
-    fail(
-      'Web dosyaları çıkarıldı fakat www/index.html bulunamadı.'
+    throw new Error(
+      'Web dosyaları çıkarıldı fakat index.html bulunamadı.'
     );
   }
 
-  log('Web içeriği başarıyla hazırlandı.');
+  log('Web sitesi hazır.');
   log(`index.html: ${indexPath}`);
 }
 
-/*
- * Uygulama adını güvenli APK dosya adına çevir.
- */
-function safeFileName(name) {
-  return String(name)
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '') || 'Uygulamam';
-}
-
-/*
- * Android izinlerini config.xml'e ekle.
- */
-function addPermissions(configContent, permissions) {
-  if (!Array.isArray(permissions) || permissions.length === 0) {
-    return configContent;
+function addAndroidNamespace(xml) {
+  if (xml.includes('xmlns:android=')) {
+    return xml;
   }
 
-  log('Android izinleri yapılandırılıyor...');
-
-  let permissionXml = '';
-
-  for (const permission of permissions) {
-    if (!permission) continue;
-
-    /*
-     * Kullanıcı config.json'a:
-     *
-     * CAMERA
-     *
-     * yazıyorsa:
-     *
-     * android.permission.CAMERA
-     *
-     * oluştur.
-     *
-     * Eğer zaten android.permission. ile başlıyorsa
-     * tekrar ekleme.
-     */
-    const cleanPermission = String(permission).trim();
-
-    if (!cleanPermission) continue;
-
-    const androidPermission =
-      cleanPermission.startsWith('android.permission.')
-        ? cleanPermission
-        : `android.permission.${cleanPermission}`;
-
-    permissionXml +=
-      `        <uses-permission android:name="${androidPermission}" />\n`;
-  }
-
-  if (!permissionXml) {
-    return configContent;
-  }
-
-  const configFileBlock =
-    `\n    <config-file parent="/manifest" target="AndroidManifest.xml">\n` +
-    permissionXml +
-    `    </config-file>\n`;
-
-  return configContent.replace(
-    '</widget>',
-    `${configFileBlock}</widget>`
-  );
-}
-
-/*
- * İkonu config.xml'e ekle.
- */
-function addIcon(configContent) {
-  if (!fs.existsSync(ICON_PATH)) {
-    log('icon.png bulunamadı. Varsayılan ikon kullanılacak.');
-    return configContent;
-  }
-
-  log('Uygulama ikonu hazırlanıyor...');
-
-  const iconTarget = path.join(
-    BUILD_DIR,
-    'res',
-    'icon.png'
-  );
-
-  fs.ensureDirSync(path.dirname(iconTarget));
-
-  fs.copySync(
-    ICON_PATH,
-    iconTarget,
-    { overwrite: true }
-  );
-
-  return configContent.replace(
-    '</widget>',
-    '    <icon src="res/icon.png" />\n</widget>'
-  );
-}
-
-/*
- * config.xml Android namespace kontrolü.
- */
-function ensureAndroidNamespace(configContent) {
-  if (configContent.includes('xmlns:android=')) {
-    return configContent;
-  }
-
-  return configContent.replace(
+  return xml.replace(
     /<widget\s+/,
     '<widget xmlns:android="http://schemas.android.com/apk/res/android" '
   );
 }
 
-/*
- * Ana build işlemi.
- */
-function main() {
-  log('========================================');
-  log('ZIP -> APK BUILD BAŞLIYOR');
-  log('========================================');
-
-  /*
-   * Gerekli dosyalar.
-   */
-  if (!fs.existsSync(CONFIG_PATH)) {
-    fail(
-      'config.json bulunamadı! ' +
-      'Repo kökünde bulunmalı.'
-    );
+function addPermissions(xml, permissions) {
+  if (!Array.isArray(permissions)) {
+    return xml;
   }
 
-  if (!fs.existsSync(ZIP_PATH)) {
-    fail(
-      'www.zip bulunamadı! ' +
-      'Repo kökünde bulunmalı.'
-    );
+  if (permissions.length === 0) {
+    return xml;
   }
 
-  /*
-   * config.json oku.
-   */
-  let config;
+  log('Android izinleri ekleniyor...');
 
-  try {
-    config = JSON.parse(
-      fs.readFileSync(CONFIG_PATH, 'utf8')
-    );
-  } catch (error) {
-    fail(
-      `config.json okunamadı:\n${error.message}`
-    );
+  let permissionXml = '';
+
+  for (const permission of permissions) {
+    if (!permission) {
+      continue;
+    }
+
+    let p = String(permission).trim();
+
+    if (!p) {
+      continue;
+    }
+
+    if (!p.startsWith('android.permission.')) {
+      p = `android.permission.${p}`;
+    }
+
+    permissionXml +=
+      `        <uses-permission android:name="${p}" />\n`;
   }
 
-  const appName =
-    config.appName || 'Uygulamam';
+  if (!permissionXml) {
+    return xml;
+  }
 
-  const packageName =
-    config.packageName || 'com.example.app';
+  const block =
+    '\n' +
+    '    <config-file parent="/manifest" target="AndroidManifest.xml">\n' +
+    permissionXml +
+    '    </config-file>\n';
 
-  const permissions =
-    Array.isArray(config.permissions)
-      ? config.permissions
-      : [];
+  return xml.replace(
+    '</widget>',
+    `${block}</widget>`
+  );
+}
 
-  log(`Uygulama adı: ${appName}`);
-  log(`Package adı: ${packageName}`);
-  log(`İzin sayısı: ${permissions.length}`);
+function addIcon(xml) {
+  if (!fs.existsSync(ICON_PATH)) {
+    log('icon.png yok. Varsayılan ikon kullanılacak.');
+    return xml;
+  }
+
+  log('icon.png ekleniyor...');
 
   /*
-   * Eski build'i temizle.
+   * Cordova'nın config.xml içindeki ikon
+   * kaynağı için res klasörü.
    */
-  log('Eski build klasörleri temizleniyor...');
-
-  fs.removeSync(BUILD_DIR);
-  fs.ensureDirSync(BUILD_DIR);
-
-  fs.emptyDirSync(OUTPUT_DIR);
-
-  /*
-   * Cordova projesini oluştur.
-   */
-  log('Cordova projesi oluşturuluyor...');
-
-  run(
-    `cordova create "${BUILD_DIR}" "${packageName}" "${appName}"`
+  const resDir = path.join(
+    BUILD_DIR,
+    'res'
   );
 
-  /*
-   * Web dosyalarını çıkar.
-   */
-  extractWebFiles();
+  fs.ensureDirSync(resDir);
 
-  /*
-   * config.xml.
-   */
-  const configXmlPath =
-    path.join(BUILD_DIR, 'config.xml');
+  fs.copySync(
+    ICON_PATH,
+    path.join(resDir, 'icon.png'),
+    {
+      overwrite: true
+    }
+  );
 
-  if (!fs.existsSync(configXmlPath)) {
-    fail(
-      'Cordova config.xml oluşturulamadı.'
+  return xml.replace(
+    '</widget>',
+    '    <icon src="res/icon.png" />\n</widget>'
+  );
+}
+
+function main() {
+  try {
+    log('========================================');
+    log('ZIP TO APK');
+    log('========================================');
+
+    /*
+     * Dosya kontrolleri.
+     */
+    if (!fs.existsSync(CONFIG_PATH)) {
+      throw new Error(
+        'config.json bulunamadı!'
+      );
+    }
+
+    if (!fs.existsSync(ZIP_PATH)) {
+      throw new Error(
+        'www.zip bulunamadı!'
+      );
+    }
+
+    /*
+     * config.json.
+     */
+    let config;
+
+    try {
+      config = JSON.parse(
+        fs.readFileSync(
+          CONFIG_PATH,
+          'utf8'
+        )
+      );
+    } catch (error) {
+      throw new Error(
+        `config.json bozuk: ${error.message}`
+      );
+    }
+
+    const appName =
+      config.appName || 'Uygulamam';
+
+    const packageName =
+      config.packageName || 'com.example.app';
+
+    const permissions =
+      Array.isArray(config.permissions)
+        ? config.permissions
+        : [];
+
+    log(`App: ${appName}`);
+    log(`Package: ${packageName}`);
+
+    /*
+     * Eski build temizle.
+     */
+    fs.removeSync(BUILD_DIR);
+    fs.emptyDirSync(OUTPUT_DIR);
+
+    /*
+     * Cordova projesi.
+     */
+    log('Cordova projesi oluşturuluyor...');
+
+    run(
+      `cordova create "${BUILD_DIR}" "${packageName}" "${appName}"`
     );
-  }
 
-  let configContent =
-    fs.readFileSync(
+    /*
+     * ZIP içeriğini çıkar.
+     */
+    extractWebFiles();
+
+    /*
+     * config.xml.
+     */
+    const configXmlPath =
+      path.join(
+        BUILD_DIR,
+        'config.xml'
+      );
+
+    if (!fs.existsSync(configXmlPath)) {
+      throw new Error(
+        'Cordova config.xml oluşturulamadı.'
+      );
+    }
+
+    let configXml =
+      fs.readFileSync(
+        configXmlPath,
+        'utf8'
+      );
+
+    configXml =
+      addAndroidNamespace(configXml);
+
+    configXml =
+      addPermissions(
+        configXml,
+        permissions
+      );
+
+    configXml =
+      addIcon(configXml);
+
+    fs.writeFileSync(
       configXmlPath,
+      configXml,
       'utf8'
     );
 
-  /*
-   * Android namespace.
-   */
-  configContent =
-    ensureAndroidNamespace(configContent);
+    /*
+     * Android.
+     */
+    log('Android platformu ekleniyor...');
 
-  /*
-   * İzinler.
-   */
-  configContent =
-    addPermissions(
-      configContent,
-      permissions
+    run(
+      'cordova platform add android@14.0.1',
+      {
+        cwd: BUILD_DIR
+      }
     );
 
-  /*
-   * İkon.
-   */
-  configContent =
-    addIcon(configContent);
+    /*
+     * Android klasörü.
+     */
+    const androidDir =
+      path.join(
+        BUILD_DIR,
+        'platforms',
+        'android'
+      );
 
-  /*
-   * config.xml kaydet.
-   */
-  fs.writeFileSync(
-    configXmlPath,
-    configContent,
-    'utf8'
-  );
-
-  log('config.xml hazırlandı.');
-
-  /*
-   * Android platformunu ekle.
-   *
-   * Workflow'da cordova-android sürümü
-   * sabitlenmişse onu kullan.
-   *
-   * Aksi halde mevcut Cordova ayarını kullan.
-   */
-  log('Android platformu ekleniyor...');
-
-  run(
-    'cordova platform add android',
-    {
-      cwd: BUILD_DIR
+    if (!fs.existsSync(androidDir)) {
+      throw new Error(
+        'Android platformu oluşturulamadı.'
+      );
     }
-  );
 
-  /*
-   * Android projesi.
-   */
-  const androidDir =
-    path.join(
-      BUILD_DIR,
-      'platforms',
-      'android'
+    /*
+     * APK.
+     */
+    log('Gradle ile APK derleniyor...');
+
+    run(
+      'gradle assembleDebug',
+      {
+        cwd: androidDir
+      }
     );
 
-  if (!fs.existsSync(androidDir)) {
-    fail(
-      'Cordova Android platformu oluşturulamadı.'
-    );
-  }
+    /*
+     * APK ara.
+     */
+    const apkPath =
+      path.join(
+        androidDir,
+        'app',
+        'build',
+        'outputs',
+        'apk',
+        'debug',
+        'app-debug.apk'
+      );
 
-  /*
-   * Gradle build.
-   */
-  log('APK derleniyor...');
-
-  run(
-    'gradle assembleDebug',
-    {
-      cwd: androidDir
+    if (!fs.existsSync(apkPath)) {
+      throw new Error(
+        'APK oluşturulamadı. ' +
+        'Gradle çıktısını kontrol et.'
+      );
     }
-  );
 
-  /*
-   * APK'yı bul.
-   */
-  const apkPath =
-    path.join(
-      androidDir,
-      'app',
-      'build',
-      'outputs',
-      'apk',
-      'debug',
-      'app-debug.apk'
+    /*
+     * Output.
+     */
+    const fileName =
+      `${safeFileName(appName)}.apk`;
+
+    const finalPath =
+      path.join(
+        OUTPUT_DIR,
+        fileName
+      );
+
+    fs.copyFileSync(
+      apkPath,
+      finalPath
     );
 
-  if (!fs.existsSync(apkPath)) {
-    fail(
-      'APK üretilemedi!\n' +
-      `Beklenen dosya:\n${apkPath}`
+    const size =
+      (
+        fs.statSync(finalPath).size /
+        1024 /
+        1024
+      ).toFixed(2);
+
+    log('========================================');
+    log('APK BAŞARIYLA OLUŞTURULDU');
+    log('========================================');
+    log(`Dosya: ${finalPath}`);
+    log(`Boyut: ${size} MB`);
+    log('========================================');
+
+  } catch (error) {
+    console.error('');
+    console.error('========================================');
+    console.error('BUILD ERROR');
+    console.error('========================================');
+    console.error(
+      error && error.stack
+        ? error.stack
+        : error
     );
+    console.error('========================================');
+
+    process.exit(1);
   }
-
-  /*
-   * Son çıktı.
-   */
-  const finalName =
-    `${safeFileName(appName)}.apk`;
-
-  const finalPath =
-    path.join(
-      OUTPUT_DIR,
-      finalName
-    );
-
-  fs.copyFileSync(
-    apkPath,
-    finalPath
-  );
-
-  /*
-   * Boyut.
-   */
-  const stats =
-    fs.statSync(finalPath);
-
-  const sizeMb =
-    (stats.size / 1024 / 1024)
-      .toFixed(2);
-
-  log('========================================');
-  log('BUILD BAŞARILI!');
-  log('========================================');
-  log(`APK: ${finalPath}`);
-  log(`Boyut: ${sizeMb} MB`);
-  log('========================================');
 }
-
-/*
- * Global hata yakalama.
- */
-process.on('uncaughtException', error => {
-  fail(
-    error && error.stack
-      ? error.stack
-      : String(error)
-  );
-});
-
-process.on('unhandledRejection', error => {
-  fail(
-    error && error.stack
-      ? error.stack
-      : String(error)
-  );
-});
 
 main();
