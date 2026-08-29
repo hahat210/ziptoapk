@@ -5,78 +5,117 @@ on:
     paths:
       - 'config.json'
       - 'icon.png'
+      - 'build.js'
+      - 'package.json'
+      - '.github/workflows/build-apk.yml'
   workflow_dispatch: {}
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
-    steps:
-      - uses: actions/checkout@v4
 
-      - name: JDK 17 kur
+    steps:
+      - name: Repo indir
+        uses: actions/checkout@v4
+
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK kur
-        uses: android-actions/setup-android@v3
-
-      - name: Build-tools ve platform indir
-        run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
-
-      - name: Gradle 8.11.1 kur
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.11.1-bin.zip
-          unzip -q gradle-8.11.1-bin.zip -d "$HOME"
-          echo "$HOME/gradle-8.11.1/bin" >> "$GITHUB_PATH"
-
-      - name: Node.js kur
+      - name: Node.js 20
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
+          cache: npm
 
-      - name: Bağımlılıkları kur
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Android SDK paketleri
         run: |
-          npm install -g cordova
-          npm install
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
-      - name: GitHub API ile www.zip indir
+      - name: Gradle 8.10.2
+        run: |
+          wget -q https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+          unzip -q gradle-8.10.2-bin.zip -d "$HOME"
+          echo "$HOME/gradle-8.10.2/bin" >> "$GITHUB_PATH"
+
+      - name: NPM bağımlılıkları
+        run: |
+          npm install
+          npm install -g cordova@12.0.0
+          cordova --version
+
+      - name: Android platformunu sabitle
+        run: |
+          mkdir -p /tmp/cordova-platform
+          npm install --prefix /tmp/cordova-platform cordova-android@14.0.1
+          export PATH="/tmp/cordova-platform/node_modules/.bin:$PATH"
+          cordova-android --version || true
+
+      - name: Release içinden www.zip indir
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Release ID bulunuyor..."
-          # Ssss tag'ine ait release bilgilerini çekip www.zip asset ID'sini alıyoruz
-          ASSET_ID=$(curl -s -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/hahat210/ziptoapk/releases/tags/Ssss" | grep -A 5 "www.zip" | grep "id\b" | head -n 1 | tr -dc '0-9')
-          
-          echo "Bulunan Asset ID: $ASSET_ID"
-          
+          set -e
+
+          echo "Release asset aranıyor..."
+
+          ASSET_ID=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/hahat210/ziptoapk/releases/tags/Ssss" \
+            | python3 -c '
+          import sys,json
+          data=json.load(sys.stdin)
+          assets=data.get("assets",[])
+          found=[a["id"] for a in assets if a["name"]=="www.zip"]
+          print(found[0] if found else "")
+          ')
+
           if [ -z "$ASSET_ID" ]; then
-            echo "HATA: www.zip asset ID bulunamadı!"
+            echo "HATA: Ssss release içinde www.zip bulunamadı."
             exit 1
           fi
-          
-          echo "Zip dosyası API üzerinden indiriliyor..."
-          curl -L -H "Authorization: token $GH_TOKEN" -H "Accept: application/octet-stream" -o www.zip "https://api.github.com/repos/hahat210/ziptoapk/releases/assets/$ASSET_ID"
-          
-          echo "Dosya boyutu ve türü:"
+
+          echo "Asset ID: $ASSET_ID"
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -o www.zip \
+            "https://api.github.com/repos/hahat210/ziptoapk/releases/assets/$ASSET_ID"
+
+          echo "İndirilen dosya:"
           ls -lh www.zip
           file www.zip
-          
-          if grep -q "<html" www.zip; then
-            echo "HATA: Dosya hâlâ HTML!"
-            exit 1
-          fi
 
-      - name: APK'yı derle
-        run: node build.js
+          unzip -t www.zip >/dev/null
 
-      - name: APK'yı yükle (indirilebilir çıktı)
+      - name: APK derle
+        run: |
+          node build.js
+
+      - name: APK kontrol
+        run: |
+          echo "APK dosyaları:"
+          find output -type f -name "*.apk" -ls
+
+          test -n "$(find output -type f -name '*.apk')"
+
+      - name: APK yükle
         uses: actions/upload-artifact@v4
         with:
           name: apk-ciktisi
           path: output/*.apk
+          if-no-files-found: error
