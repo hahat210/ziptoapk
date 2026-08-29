@@ -8,7 +8,7 @@ on:
       - 'build.js'
       - 'package.json'
       - '.github/workflows/build-apk.yml'
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
   build:
@@ -18,25 +18,24 @@ jobs:
       contents: read
 
     steps:
-      - name: Repo indir
+      - name: Repository indir
         uses: actions/checkout@v4
 
-      - name: Java 17
+      - name: Java 17 kur
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Node.js 20
+      - name: Node.js 20 kur
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
 
-      - name: Android SDK
+      - name: Android SDK kur
         uses: android-actions/setup-android@v3
 
-      - name: Android SDK paketleri
+      - name: Android SDK paketlerini kur
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager \
@@ -44,51 +43,64 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Gradle 8.10.2
+      - name: Gradle kur
         run: |
           wget -q https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
           unzip -q gradle-8.10.2-bin.zip -d "$HOME"
           echo "$HOME/gradle-8.10.2/bin" >> "$GITHUB_PATH"
 
-      - name: NPM bağımlılıkları
+      - name: Cordova kur
         run: |
-          npm install
           npm install -g cordova@12.0.0
           cordova --version
 
-      - name: Android platformunu sabitle
+      - name: Node bağımlılıklarını kur
         run: |
-          mkdir -p /tmp/cordova-platform
-          npm install --prefix /tmp/cordova-platform cordova-android@14.0.1
-          export PATH="/tmp/cordova-platform/node_modules/.bin:$PATH"
-          cordova-android --version || true
+          npm install --no-audit --no-fund
 
-      - name: Release içinden www.zip indir
+      - name: www.zip indir
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
-          echo "Release asset aranıyor..."
+          echo "Ssss release aranıyor..."
 
-          ASSET_ID=$(curl -fsSL \
+          curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/hahat210/ziptoapk/releases/tags/Ssss" \
-            | python3 -c '
-          import sys,json
-          data=json.load(sys.stdin)
-          assets=data.get("assets",[])
-          found=[a["id"] for a in assets if a["name"]=="www.zip"]
-          print(found[0] if found else "")
-          ')
+            -o release.json
+
+          ASSET_ID=$(python3 - <<'PY'
+          import json
+
+          with open("release.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          for asset in data.get("assets", []):
+              if asset.get("name") == "www.zip":
+                  print(asset["id"])
+                  break
+          PY
+          )
 
           if [ -z "$ASSET_ID" ]; then
             echo "HATA: Ssss release içinde www.zip bulunamadı."
+            echo "Release assetleri:"
+            python3 - <<'PY'
+          import json
+
+          with open("release.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          for asset in data.get("assets", []):
+              print("-", asset.get("name"))
+          PY
             exit 1
           fi
 
-          echo "Asset ID: $ASSET_ID"
+          echo "www.zip Asset ID: $ASSET_ID"
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -96,11 +108,14 @@ jobs:
             -o www.zip \
             "https://api.github.com/repos/hahat210/ziptoapk/releases/assets/$ASSET_ID"
 
-          echo "İndirilen dosya:"
+          rm -f release.json
+
+          echo "Dosya bilgisi:"
           ls -lh www.zip
           file www.zip
 
-          unzip -t www.zip >/dev/null
+          echo "ZIP testi:"
+          unzip -t www.zip
 
       - name: APK derle
         run: |
@@ -108,7 +123,7 @@ jobs:
 
       - name: APK kontrol
         run: |
-          echo "APK dosyaları:"
+          echo "Üretilen APK:"
           find output -type f -name "*.apk" -ls
 
           test -n "$(find output -type f -name '*.apk')"
