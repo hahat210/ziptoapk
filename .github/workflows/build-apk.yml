@@ -3,6 +3,7 @@ name: ZIP to APK
 on:
   push:
     paths:
+      - 'www.zip'
       - 'config.json'
       - 'icon.png'
   workflow_dispatch: {}
@@ -12,10 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: www.zip dosyasini Releases'ten indir
-        run: |
-          wget -O www.zip "https://github.com/hahat210/ziptoapk/releases/tag/Ssss"
 
       - name: JDK 17 kur
         uses: actions/setup-java@v4
