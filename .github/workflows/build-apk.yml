@@ -43,11 +43,23 @@ jobs:
           npm install -g cordova
           npm install
 
-      - name: Releases üzerinden www.zip indir
+      - name: Releases üzerinden www.zip indir ve doğrula
         run: |
+          echo "ZIP dosyası indiriliyor..."
           curl -L -o www.zip "https://github.com/hahat210/ziptoapk/releases/download/Ssss/www.zip"
+          
+          echo "Dosya türü kontrol ediliyor:"
           file www.zip
-          ls -la www.zip
+          ls -lh www.zip
+          
+          echo "İndirilen dosyanın ilk birkaç baytı (Header kontrolü):"
+          head -c 50 www.zip || true
+          
+          # Eğer indirilen şey HTML çıkarsa (hata sayfasıysa) build'i patlatıp sebebi görelim
+          if grep -q "<html" www.zip; then
+            echo "HATA: İndirilen dosya bir ZIP değil, HTML hata sayfası!"
+            exit 1
+          fi
 
       - name: APK'yı derle
         run: node build.js
