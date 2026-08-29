@@ -45,8 +45,7 @@ jobs:
 
       - name: Releases üzerinden www.zip indir
         run: |
-          # Buraya GitHub Releases'e yükleyeceğin www.zip dosyasının direkt indirme (download) linkini yazacaksın
-          wget -O www.zip "https://github.com/hahat210/ziptoapk/releases/latest/download/www.zip"
+          wget -O www.zip "https://github.com/hahat210/ziptoapk/releases/download/Ssss/www.zip"
 
       - name: APK'yı derle
         run: node build.js
