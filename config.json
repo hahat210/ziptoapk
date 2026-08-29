@@ -1,0 +1,5 @@
+{
+  "appName": "Uygulamam",
+  "packageName": "com.polat.app",
+  "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+}
