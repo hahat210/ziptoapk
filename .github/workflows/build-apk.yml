@@ -45,22 +45,30 @@ jobs:
           npm install -g cordova
           npm install
 
-      - name: Releases üzerinden www.zip indir ve doğrula
+      - name: GitHub API ile www.zip indir
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "GitHub Token kullanarak ZIP dosyası indiriliyor..."
-          curl -L -H "Authorization: token $GITHUB_TOKEN" -o www.zip "https://github.com/hahat210/ziptoapk/releases/download/Ssss/www.zip"
+          echo "Release ID bulunuyor..."
+          # Ssss tag'ine ait release bilgilerini çekip www.zip asset ID'sini alıyoruz
+          ASSET_ID=$(curl -s -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/hahat210/ziptoapk/releases/tags/Ssss" | grep -A 5 "www.zip" | grep "id\b" | head -n 1 | tr -dc '0-9')
           
-          echo "Dosya türü kontrol ediliyor:"
-          file www.zip
+          echo "Bulunan Asset ID: $ASSET_ID"
+          
+          if [ -z "$ASSET_ID" ]; then
+            echo "HATA: www.zip asset ID bulunamadı!"
+            exit 1
+          fi
+          
+          echo "Zip dosyası API üzerinden indiriliyor..."
+          curl -L -H "Authorization: token $GH_TOKEN" -H "Accept: application/octet-stream" -o www.zip "https://api.github.com/repos/hahat210/ziptoapk/releases/assets/$ASSET_ID"
+          
+          echo "Dosya boyutu ve türü:"
           ls -lh www.zip
-          
-          echo "Header kontrolü:"
-          head -c 50 www.zip || true
+          file www.zip
           
           if grep -q "<html" www.zip; then
-            echo "HATA: İndirilen dosya hâlâ HTML sayfası!"
+            echo "HATA: Dosya hâlâ HTML!"
             exit 1
           fi
 
