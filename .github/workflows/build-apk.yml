@@ -58,21 +58,48 @@ jobs:
         run: |
           npm install --no-audit --no-fund
 
-      - name: www.zip indir
+      - name: Ssss release içindeki www.zip indir
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
 
-          echo "Ssss release aranıyor..."
+          REPO="hahat210/ziptoapk"
+          TAG="Ssss"
+
+          echo "========================================"
+          echo "Release aranıyor: $TAG"
+          echo "========================================"
 
           curl -fsSL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/hahat210/ziptoapk/releases/tags/Ssss" \
+            "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
             -o release.json
 
-          ASSET_ID=$(python3 - <<'PY'
+          echo "Release bulundu."
+
+          python3 - <<'PY'
+          import json
+
+          with open("release.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          print("Release:", data.get("name"))
+          print("Tag:", data.get("tag_name"))
+          print("Assetler:")
+
+          for asset in data.get("assets", []):
+              print(
+                  " -",
+                  asset.get("name"),
+                  "|",
+                  asset.get("size"),
+                  "bytes"
+              )
+          PY
+
+          DOWNLOAD_URL=$(python3 - <<'PY'
           import json
 
           with open("release.json", "r", encoding="utf-8") as f:
@@ -80,42 +107,51 @@ jobs:
 
           for asset in data.get("assets", []):
               if asset.get("name") == "www.zip":
-                  print(asset["id"])
+                  print(asset.get("browser_download_url", ""))
                   break
           PY
           )
 
-          if [ -z "$ASSET_ID" ]; then
-            echo "HATA: Ssss release içinde www.zip bulunamadı."
-            echo "Release assetleri:"
-            python3 - <<'PY'
-          import json
-
-          with open("release.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
-
-          for asset in data.get("assets", []):
-              print("-", asset.get("name"))
-          PY
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo ""
+            echo "HATA: Ssss release içinde adı tam olarak www.zip olan asset bulunamadı."
             exit 1
           fi
 
-          echo "www.zip Asset ID: $ASSET_ID"
+          echo ""
+          echo "www.zip bulundu:"
+          echo "$DOWNLOAD_URL"
+
+          echo ""
+          echo "Asset indiriliyor..."
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/octet-stream" \
-            -o www.zip \
-            "https://api.github.com/repos/hahat210/ziptoapk/releases/assets/$ASSET_ID"
+            "$DOWNLOAD_URL" \
+            -o www.zip
 
-          rm -f release.json
+          echo ""
+          echo "========================================"
+          echo "İndirilen dosya"
+          echo "========================================"
 
-          echo "Dosya bilgisi:"
           ls -lh www.zip
           file www.zip
 
-          echo "ZIP testi:"
+          echo ""
+          echo "ZIP doğrulanıyor..."
+
           unzip -t www.zip
+
+          echo ""
+          echo "ZIP içeriği:"
+          unzip -l www.zip | head -80
+
+          rm -f release.json
+
+          echo ""
+          echo "www.zip başarıyla indirildi ve doğrulandı."
 
       - name: APK derle
         run: |
