@@ -1,5 +1,5 @@
 {
-  "appName": "Uygulamam",
-  "packageName": "com.polat.app",
-  "permissions": ["INTERNET", "ACCESS_NETWORK_STATE"]
+  "appName": "Hastane RP",
+  "packageName": "com.com.app",
+  "permissions": ["INTERNET", "CAMERA"]
 }
