@@ -15,7 +15,7 @@ jobs:
 
       - name: www.zip dosyasini Releases'ten indir
         run: |
-          wget -O www.zip "BURAYA_GITHUB_RELEASES_DIREKT_INDIRME_LINKINI_YAZ"
+          wget -O www.zip "https://github.com/hahat210/ziptoapk/releases/tag/Ssss"
 
       - name: JDK 17 kur
         uses: actions/setup-java@v4
