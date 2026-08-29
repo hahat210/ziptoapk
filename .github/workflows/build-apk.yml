@@ -45,7 +45,9 @@ jobs:
 
       - name: Releases üzerinden www.zip indir
         run: |
-          wget -O www.zip "https://github.com/hahat210/ziptoapk/releases/download/Ssss/www.zip"
+          curl -L -o www.zip "https://github.com/hahat210/ziptoapk/releases/download/Ssss/www.zip"
+          file www.zip
+          ls -la www.zip
 
       - name: APK'yı derle
         run: node build.js
