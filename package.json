@@ -1,10 +1,9 @@
 {
-  "name": "ziptoapk-cloud",
+  "name": "ziptoapk",
   "version": "1.0.0",
   "private": true,
-  "description": "GitHub Actions üzerinde ZIP dosyasını APK'ya dönüştürür.",
   "dependencies": {
-    "fs-extra": "^11.2.0",
-    "adm-zip": "^0.5.10"
+    "adm-zip": "^0.5.16",
+    "fs-extra": "^11.3.0"
   }
 }
