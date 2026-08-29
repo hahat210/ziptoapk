@@ -1,5 +1,5 @@
 {
-  "appName": "Hastane RP",
-  "packageName": "com.com.app",
+  "appName": "SRC TEST",
+  "packageName": "com.polat.srctesti3ve4",
   "permissions": ["INTERNET", "CAMERA"]
 }
