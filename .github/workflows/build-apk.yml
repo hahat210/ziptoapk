@@ -80,36 +80,36 @@ jobs:
           echo "Release bulundu."
 
           python3 - <<'PY'
-          import json
+import json
 
-          with open("release.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+with open("release.json", "r", encoding="utf-8") as f:
+    data = json.load(f)
 
-          print("Release:", data.get("name"))
-          print("Tag:", data.get("tag_name"))
-          print("Assetler:")
+print("Release:", data.get("name"))
+print("Tag:", data.get("tag_name"))
+print("Assetler:")
 
-          for asset in data.get("assets", []):
-              print(
-                  " -",
-                  asset.get("name"),
-                  "|",
-                  asset.get("size"),
-                  "bytes"
-              )
-          PY
+for asset in data.get("assets", []):
+    print(
+        " -",
+        asset.get("name"),
+        "|",
+        asset.get("size"),
+        "bytes"
+    )
+PY
 
           DOWNLOAD_URL=$(python3 - <<'PY'
-          import json
+import json
 
-          with open("release.json", "r", encoding="utf-8") as f:
-              data = json.load(f)
+with open("release.json", "r", encoding="utf-8") as f:
+    data = json.load(f)
 
-          for asset in data.get("assets", []):
-              if asset.get("name") == "www.zip":
-                  print(asset.get("browser_download_url", ""))
-                  break
-          PY
+for asset in data.get("assets", []):
+    if asset.get("name") == "www.zip":
+        print(asset.get("browser_download_url", ""))
+        break
+PY
           )
 
           if [ -z "$DOWNLOAD_URL" ]; then
