@@ -1,4 +1,4 @@
-Name: ZIP to APK
+name: ZIP to APK
 
 on:
   push:
