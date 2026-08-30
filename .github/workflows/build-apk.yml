@@ -79,40 +79,14 @@ jobs:
 
           echo "Release bulundu."
 
-          python3 - <<'PY'
-import json
+          echo "Release: $(jq -r '.name // "isimsiz"' release.json)"
+          echo "Tag: $(jq -r '.tag_name' release.json)"
+          echo "Assetler:"
+          jq -r '.assets[] | " - " + .name + " | " + (.size | tostring) + " bytes"' release.json
 
-with open("release.json", "r", encoding="utf-8") as f:
-    data = json.load(f)
+          DOWNLOAD_URL=$(jq -r '.assets[] | select(.name == "www.zip") | .browser_download_url' release.json | head -n1)
 
-print("Release:", data.get("name"))
-print("Tag:", data.get("tag_name"))
-print("Assetler:")
-
-for asset in data.get("assets", []):
-    print(
-        " -",
-        asset.get("name"),
-        "|",
-        asset.get("size"),
-        "bytes"
-    )
-PY
-
-          DOWNLOAD_URL=$(python3 - <<'PY'
-import json
-
-with open("release.json", "r", encoding="utf-8") as f:
-    data = json.load(f)
-
-for asset in data.get("assets", []):
-    if asset.get("name") == "www.zip":
-        print(asset.get("browser_download_url", ""))
-        break
-PY
-          )
-
-          if [ -z "$DOWNLOAD_URL" ]; then
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
             echo ""
             echo "HATA: Ssss release içinde adı tam olarak www.zip olan asset bulunamadı."
             exit 1
