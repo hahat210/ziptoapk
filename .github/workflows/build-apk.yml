@@ -1,4 +1,4 @@
-name: ZIP to APK
+Name: ZIP to APK
 
 on:
   push:
@@ -58,7 +58,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
 
-      - name: Ssss release içindeki www.zip indir
+      - name: Çoklu ZIP dosyalarını derle ve APK üret
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -66,56 +66,63 @@ jobs:
 
           REPO="hahat210/ziptoapk"
           TAG="Ssss"
+          
+          mkdir -p output_all
 
-          echo "========================================"
-          echo "Release aranıyor: $TAG"
-          echo "========================================"
+          # www.zip ve www2.zip ile www10.zip arasındaki dosyaları döngüye alıyoruz
+          for i in {1..10}; do
+            if [ "$i" -eq 1 ]; then
+              ZIP_NAME="www.zip"
+              APP_NAME="Uygulama1"
+            else
+              ZIP_NAME="www${i}.zip"
+              APP_NAME="Uygulama${i}"
+            fi
 
-          gh release view "$TAG" --repo "$REPO"
+            echo "========================================"
+            echo "İşleniyor: $ZIP_NAME -> $APP_NAME"
+            echo "========================================"
 
-          echo ""
-          echo "Asset indiriliyor: www.zip"
+            # Belirli arşivi indir
+            gh release download "$TAG" \
+              --repo "$REPO" \
+              --pattern "$ZIP_NAME" \
+              --output target.zip \
+              --clobber
 
-          gh release download "$TAG" \
-            --repo "$REPO" \
-            --pattern "www.zip" \
-            --output www.zip \
-            --clobber
+            # Arşiv kontrolü
+            unzip -t target.zip
 
-          echo ""
-          echo "========================================"
-          echo "İndirilen dosya"
-          echo "========================================"
+            # build.js dosyasının bu zip dosyasını okuyacak şekilde ayarlı olduğunu varsayıyoruz
+            # Eğer build.js sabit 'www.zip' arıyorsa, indirdiğimiz dosyayı target.zip yerine geçici olarak kopyalayabilirsin:
+            cp target.zip www.zip
 
-          ls -lh www.zip
-          file www.zip
+            # APK derle
+            node build.js
 
-          echo ""
-          echo "ZIP doğrulanıyor..."
+            # Üretilen APK'yı bul ve yeniden adlandır
+            FOUND_APK=$(find output -type f -name "*.apk" | head -n 1)
+            if [ -n "$FOUND_APK" ]; then
+              cp "$FOUND_APK" "output_all/${APP_NAME}.apk"
+              echo "$APP_NAME başarıyla derlendi ve kaydedildi."
+            else
+              echo "HATA: $APP_NAME için APK bulunamadı!"
+              exit 1
+            fi
+            
+            # Temizlik
+            rm -f target.zip www.zip
+            rm -rf output/*
+          done
 
-          unzip -t www.zip
-
-          echo ""
-          echo "ZIP içeriği:"
-          unzip -l www.zip | head -80
-
-          echo ""
-          echo "www.zip başarıyla indirildi ve doğrulandı."
-
-      - name: APK derle
+      - name: Tüm APK'ları kontrol et
         run: |
-          node build.js
+          echo "Üretilen Tüm APK'lar:"
+          ls -lh output_all/
 
-      - name: APK kontrol
-        run: |
-          echo "Üretilen APK:"
-          find output -type f -name "*.apk" -ls
-
-          test -n "$(find output -type f -name '*.apk')"
-
-      - name: APK yükle
+      - name: APK'ları Artifact olarak yükle
         uses: actions/upload-artifact@v4
         with:
-          name: apk-ciktisi
-          path: output/*.apk
+          name: tum-uygulamalar-apk
+          path: output_all/*.apk
           if-no-files-found: error
