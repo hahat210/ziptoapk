@@ -71,38 +71,16 @@ jobs:
           echo "Release aranıyor: $TAG"
           echo "========================================"
 
-          curl -fsSL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/releases/tags/$TAG" \
-            -o release.json
-
-          echo "Release bulundu."
-
-          echo "Release: $(jq -r '.name // "isimsiz"' release.json)"
-          echo "Tag: $(jq -r '.tag_name' release.json)"
-          echo "Assetler:"
-          jq -r '.assets[] | " - " + .name + " | " + (.size | tostring) + " bytes"' release.json
-
-          ASSET_ID=$(jq -r '.assets[] | select(.name == "www.zip") | .id' release.json | head -n1)
-
-          if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
-            echo ""
-            echo "HATA: Ssss release içinde adı tam olarak www.zip olan asset bulunamadı."
-            exit 1
-          fi
+          gh release view "$TAG" --repo "$REPO"
 
           echo ""
-          echo "www.zip asset ID: $ASSET_ID"
+          echo "Asset indiriliyor: www.zip"
 
-          echo ""
-          echo "Asset indiriliyor..."
-
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID" \
-            -o www.zip
+          gh release download "$TAG" \
+            --repo "$REPO" \
+            --pattern "www.zip" \
+            --output www.zip \
+            --clobber
 
           echo ""
           echo "========================================"
@@ -120,8 +98,6 @@ jobs:
           echo ""
           echo "ZIP içeriği:"
           unzip -l www.zip | head -80
-
-          rm -f release.json
 
           echo ""
           echo "www.zip başarıyla indirildi ve doğrulandı."
