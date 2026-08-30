@@ -58,7 +58,7 @@ jobs:
         run: |
           npm install --no-audit --no-fund
 
-      - name: Çoklu ZIP dosyalarını derle ve APK üret
+      - name: Dinamik ZIP tespiti, Package adı güncellemesi ve APK derleme
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -69,33 +69,50 @@ jobs:
           
           mkdir -p output_all
 
-          # www.zip ve www2.zip ile www10.zip arasındaki dosyaları döngüye alıyoruz
-          for i in {1..10}; do
-            if [ "$i" -eq 1 ]; then
-              ZIP_NAME="www.zip"
-              APP_NAME="Uygulama1"
-            else
-              ZIP_NAME="www${i}.zip"
-              APP_NAME="Uygulama${i}"
-            fi
+          echo "========================================"
+          echo "Release içindeki www*.zip dosyaları listeleniyor..."
+          echo "========================================"
 
-            echo "========================================"
-            echo "İşleniyor: $ZIP_NAME -> $APP_NAME"
-            echo "========================================"
+          # Release'deki tüm varlıkları al ve www ile başlayıp .zip ile bitenleri filtrele
+          ASSETS=$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | grep -E '^www[0-9]*\.zip$')
 
-            # Belirli arşivi indir
+          echo "Bulunan ZIP dosyaları:"
+          echo "$ASSETS"
+
+          COUNTER=1
+          for ZIP_NAME in $ASSETS; do
+            APP_NAME="Uygulama${COUNTER}"
+            
+            echo ""
+            echo "----------------------------------------"
+            echo "İşleniyor ($COUNTER): $ZIP_NAME -> $APP_NAME"
+            echo "----------------------------------------"
+
+            # Arşivi indir
             gh release download "$TAG" \
               --repo "$REPO" \
               --pattern "$ZIP_NAME" \
-              --output target.zip \
+              --output www.zip \
               --clobber
 
-            # Arşiv kontrolü
-            unzip -t target.zip
+            # Doğrula
+            unzip -t www.zip
 
-            # build.js dosyasının bu zip dosyasını okuyacak şekilde ayarlı olduğunu varsayıyoruz
-            # Eğer build.js sabit 'www.zip' arıyorsa, indirdiğimiz dosyayı target.zip yerine geçici olarak kopyalayabilirsin:
-            cp target.zip www.zip
+            # Package adının çakışmaması için sonuna sayfa/numara ekleyelim 
+            # (config.json veya Cordova config.xml içindeki package adına müdahale edebiliriz)
+            if [ -f "config.json" ]; then
+              echo "config.json güncelleniyor..."
+              # Node ile config.json içindeki package/id değerinin sonuna numara ekliyoruz
+              node -e '
+                const fs = require("fs");
+                let config = JSON.parse(fs.readFileSync("config.json", "utf8"));
+                if (config.id || config.packageId || config.bundleId) {
+                  let key = config.id ? "id" : (config.packageId ? "packageId" : "bundleId");
+                  config[key] = config[key] + "'${COUNTER}'";
+                }
+                fs.writeFileSync("config.json", JSON.stringify(config, null, 2));
+              '
+            fi
 
             # APK derle
             node build.js
@@ -110,9 +127,12 @@ jobs:
               exit 1
             fi
             
-            # Temizlik
-            rm -f target.zip www.zip
+            # Sonraki döngü için temizlik (git değişikliklerini geri al ki config.json orijinal haline dönsün)
+            git checkout config.json
+            rm -f www.zip
             rm -rf output/*
+            
+            COUNTER=$((COUNTER + 1))
           done
 
       - name: Tüm APK'ları kontrol et
