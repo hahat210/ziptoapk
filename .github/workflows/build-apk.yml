@@ -84,17 +84,16 @@ jobs:
           echo "Assetler:"
           jq -r '.assets[] | " - " + .name + " | " + (.size | tostring) + " bytes"' release.json
 
-          DOWNLOAD_URL=$(jq -r '.assets[] | select(.name == "www.zip") | .browser_download_url' release.json | head -n1)
+          ASSET_ID=$(jq -r '.assets[] | select(.name == "www.zip") | .id' release.json | head -n1)
 
-          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+          if [ -z "$ASSET_ID" ] || [ "$ASSET_ID" = "null" ]; then
             echo ""
             echo "HATA: Ssss release içinde adı tam olarak www.zip olan asset bulunamadı."
             exit 1
           fi
 
           echo ""
-          echo "www.zip bulundu:"
-          echo "$DOWNLOAD_URL"
+          echo "www.zip asset ID: $ASSET_ID"
 
           echo ""
           echo "Asset indiriliyor..."
@@ -102,7 +101,7 @@ jobs:
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/octet-stream" \
-            "$DOWNLOAD_URL" \
+            "https://api.github.com/repos/$REPO/releases/assets/$ASSET_ID" \
             -o www.zip
 
           echo ""
