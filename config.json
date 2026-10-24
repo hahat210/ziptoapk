@@ -1,5 +1,5 @@
 {
   "appName": "DHBT TEST",
-  "packageName": "com.polat.dhbt",
+  "packageName": "com.polat.dhbttesti",
   "permissions": ["INTERNET", "CAMERA"]
 }
